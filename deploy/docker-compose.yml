@@ -1,4 +1,4 @@
-﻿name: football_tracking_be
+name: fusionboard_be
 
 services:
   caddy:
@@ -19,6 +19,9 @@ services:
       context: ..
       dockerfile: Dockerfile
     restart: unless-stopped
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     command: >
       sh -c "python -m services.run_migration &&
              uvicorn services.run_api:api --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers --forwarded-allow-ips='*'"
@@ -28,30 +31,16 @@ services:
       APP_ENV: ${APP_ENV:-production}
       DATABASE_URL: ${DATABASE_URL}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-*}
-      AUTHJWT_SECRET_KEY: ${AUTHJWT_SECRET_KEY:-ObWbNt8AiZSOkOdf83Qj9Rc9LePre1CtTpHgTBzZmigKGPMcvYXnjrBR46O8KjWT}
+      AUTHJWT_SECRET_KEY: ${AUTHJWT_SECRET_KEY}
       AUTHJWT_TOKEN_LOCATION: ${AUTHJWT_TOKEN_LOCATION:-cookies}
       AUTHJWT_COOKIE_SAMESITE: ${AUTHJWT_COOKIE_SAMESITE:-none}
       AUTHJWT_COOKIE_SECURE: ${AUTHJWT_COOKIE_SECURE:-true}
       AUTHJWT_COOKIE_CSRF_PROTECT: ${AUTHJWT_COOKIE_CSRF_PROTECT:-false}
-      DEFAULT_FROM: ${DEFAULT_FROM:-Match Notifier <no-reply@example.com>}
-      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
-      SMTP_PORT: ${SMTP_PORT:-587}
-      FROM_NAME: ${FROM_NAME:-Match Notifier}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      POSTGRESQL_HOST: ${POSTGRESQL_HOST:-}
-      JWT_ACCESS_TOKEN_EXPIRE_MINUTES: ${JWT_ACCESS_TOKEN_EXPIRE_MINUTES:-3600}
-      POSTGRESQL_DATABASE: ${POSTGRESQL_DATABASE:-}
-      POSTGRESQL_USERNAME: ${POSTGRESQL_USERNAME:-}
-      POSTGRESQL_PASSWORD: ${POSTGRESQL_PASSWORD:-}
-      POSTGRESQL_PORT: ${POSTGRESQL_PORT:-5432}
-      POSTGRESQL_LOCAL_HOST: ${POSTGRESQL_LOCAL_HOST:-}
-      POSTGRESQL_LOCAL_DATABASE: ${POSTGRESQL_LOCAL_DATABASE:-}
-      POSTGRESQL_LOCAL_USERNAME: ${POSTGRESQL_LOCAL_USERNAME:-}
-      POSTGRESQL_LOCAL_PASSWORD: ${POSTGRESQL_LOCAL_PASSWORD:-}
-      POSTGRESQL_LOCAL_PORT: ${POSTGRESQL_LOCAL_PORT:-5432}
+      FOOTBALL_TRACKING_API_URL: ${FOOTBALL_TRACKING_API_URL}
+      FOOTBALL_TRACKING_API_KEY: ${FOOTBALL_TRACKING_API_KEY}
       PORT: ${PORT:-8000}
-    expose:
-      - "8000"
+    ports:
+      - "8000:8000"
 
 volumes:
   caddy_data:
