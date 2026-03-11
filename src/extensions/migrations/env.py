@@ -3,7 +3,8 @@ from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 from alembic import context
 import modules
-import alembic_postgresql_enum
+# alembic_postgresql_enum disabled – shared DB has enums from other services
+# that must not be touched by our migrations.
 
 from extensions.sqlalchemy.init import build_database_url
 # this is the Alembic Config object, which provides
@@ -25,10 +26,15 @@ config.set_main_option("sqlalchemy.url", build_database_url())
 from extensions import BaseModel
 target_metadata = BaseModel.metadata
 
-# other values from the config, defined by the needs of env.py,
-# can be acquired:
-# my_important_option = config.get_main_option("my_important_option")
-# ... etc.
+# Only manage tables defined in our own models – ignore everything else
+# that may exist in a shared database (e.g. football-tracking tables).
+_own_tables = set(target_metadata.tables.keys())
+
+
+def include_object(object, name, type_, reflected, compare_to):
+    if type_ == "table":
+        return name in _own_tables
+    return True
 
 
 def run_migrations_offline() -> None:
@@ -49,7 +55,8 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
-        ignore_unknown_revisions=True
+        ignore_unknown_revisions=True,
+        include_object=include_object,
     )
 
     with context.begin_transaction():
@@ -71,7 +78,9 @@ def run_migrations_online() -> None:
 
     with connectable.connect() as connection:
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=connection,
+            target_metadata=target_metadata,
+            include_object=include_object,
         )
 
         with context.begin_transaction():

@@ -1,4 +1,4 @@
-﻿import logging
+import logging
 import os
 import sys
 from contextlib import asynccontextmanager
@@ -23,8 +23,7 @@ from extensions.auth_jwt.exceptions import (
     CSRFError,
 )
 from extensions.sqlalchemy import init_db, DBSessionMiddleware, SessionLocal
-from modules import agentRouter, authRouter, attendanceRouter, userRouter, matchRouter, adminRouter, teamRouter, playerRouter, tournamentRouter, rankingRouter, emailRouter, notificationsRouter, trainingRouter, reportsRouter, matchPlanRouter
-from modules.attendance.events import backfill_attendance_for_existing_scopes
+from modules import authRouter, footballRouter, platformRouter, samplePlatformRouter
 from modules.user.models.user_model import UserModel
 from modules.admin.models.admin_model import AdminModel
 from project_helpers.error import Error
@@ -178,32 +177,15 @@ def _get_jwt_config() -> list[tuple[str, str | list[str] | None]]:
     return config
 
 
-def _ensure_pg_enum_value(enum_name: str, value: str) -> None:
-    """Add a new value to an existing PostgreSQL enum type if it doesn't exist."""
-    from sqlalchemy import text
-    from extensions.sqlalchemy import engine
-    with engine.connect() as conn:
-        result = conn.execute(
-            text("SELECT 1 FROM pg_enum WHERE enumtypid = "
-                 "(SELECT oid FROM pg_type WHERE typname = :enum_name) "
-                 "AND enumlabel = :value"),
-            {"enum_name": enum_name, "value": value},
-        )
-        if not result.fetchone():
-            conn.execute(text(f"ALTER TYPE {enum_name} ADD VALUE '{value}'"))
-            conn.commit()
-            logging.info("Added '%s' to PostgreSQL enum '%s'.", value, enum_name)
-
-
 def _ensure_default_admin_user(db: SessionLocal) -> None:
-    default_email = "admin@fcbasecamp.ro"
+    default_email = "admin@fusionboard.io"
     exists = db.query(UserModel).filter(UserModel.email == default_email).first()
     if exists:
         return
     admin = AdminModel(
-        name="Administrator Platforma",
+        name="FusionBoard Admin",
         email=default_email,
-        password="BasecampAdmin123!",
+        password="FusionAdmin2026!",
     )
     db.add(admin)
     db.commit()
@@ -211,13 +193,6 @@ def _ensure_default_admin_user(db: SessionLocal) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Resolve Pydantic forward references now that all modules are loaded.
-    from modules.player.models.player_schemas import PlayerResponse
-    from modules.team.models.team_schemas import TeamResponse, BaseCampTeamResponse
-    TeamResponse.model_rebuild(_types_namespace={"PlayerResponse": PlayerResponse})
-    BaseCampTeamResponse.model_rebuild(_types_namespace={"PlayerResponse": PlayerResponse})
-
-    # startup logic
     logging.basicConfig(
         format="%(asctime)s - [%(levelname)s]: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
@@ -226,32 +201,27 @@ async def lifespan(app: FastAPI):
     )
     init_db()
 
-    # Ensure MATCH_REMINDER enum value exists in PostgreSQL
-    _ensure_pg_enum_value("notificationtype", "MATCH_REMINDER")
-
     db = SessionLocal()
     try:
-        backfill_attendance_for_existing_scopes(db)
         _ensure_default_admin_user(db)
     finally:
         db.close()
 
-    # Start APScheduler for match reminder job (runs every hour)
-    from apscheduler.schedulers.background import BackgroundScheduler
-    from services.match_reminder_job import run_match_reminder_job
+    # Register platform services
+    from modules.football_tracking.register import register_football_service
+    from modules.sample_platform.register import register_sample_service
+    register_football_service()
+    register_sample_service()
 
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(run_match_reminder_job, "interval", hours=1, id="match_reminder")
-    scheduler.start()
-    logging.info("Match reminder scheduler started (runs every hour).")
+    from modules.platform_registry.service_registry import registry
+    logging.info("FusionBoard API started - %d platform(s) registered.", len(registry.services))
 
     yield
 
-    scheduler.shutdown(wait=False)
-    logging.info("Match reminder scheduler stopped.")
+    logging.info("FusionBoard API shutting down.")
 
 
-# â”€â”€â”€ 1) Create the app â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ─── Create the app ──────────────────────────────────────────────────────
 api = FastAPI(
     exception_handlers={
         ErrorException: error_exception_handler,
@@ -261,8 +231,9 @@ api = FastAPI(
         SQLAlchemyError: sqlalchemy_exception_handler,
         Exception: unhandled_exception_handler,
     },
-    title="Football Tracking API",
-    version="0.1.0",
+    title="FusionBoard API",
+    description="Unified dashboard API for all your platform services",
+    version="1.0.0",
     lifespan=lifespan,
 )
 
@@ -281,12 +252,8 @@ async def force_cors_headers(request: Request, call_next):
             response.headers["Access-Control-Allow-Credentials"] = "true"
     return response
 
-# â”€â”€â”€ 2) Install your DBSessionMiddleware at import time â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
 api.add_middleware(DBSessionMiddleware)
-
-
-
-# â”€â”€â”€ 3) CORS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 api.add_middleware(
     CORSMiddleware,
     allow_origins=_allowed_origins,
@@ -295,24 +262,23 @@ api.add_middleware(
     allow_headers=["*"],
 )
 
+
 @api.get("/health")
 def health():
-    return {"status": "ok"}
+    return {"status": "ok", "service": "fusionboard"}
 
 
-# â”€â”€â”€ 4) Startup event (you can keep on_event or switch to lifespan) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-# â”€â”€â”€ 5) Include routers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ─── Include routers ─────────────────────────────────────────────────────
 common_responses = {
     500: {"model": ErrorSchema},
     401: {"model": ErrorSchema},
     422: {"model": ErrorSchema},
     404: {"model": ErrorSchema},
 }
-for router in (userRouter, adminRouter, matchRouter, teamRouter, playerRouter, tournamentRouter, rankingRouter, emailRouter, notificationsRouter, attendanceRouter, trainingRouter, authRouter, reportsRouter, agentRouter, matchPlanRouter):
+for router in (authRouter, footballRouter, platformRouter, samplePlatformRouter):
     api.include_router(router, responses=common_responses)
 
 
-# â”€â”€â”€ 7) Optional CLI for local dev â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 def main():
     port = int(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1].isdigit() else 8000
     uvicorn.run("services.run_api:api", host="0.0.0.0", port=port, reload=True, app_dir="src")
@@ -320,6 +286,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
