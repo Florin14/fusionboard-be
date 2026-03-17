@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import sys
@@ -23,7 +24,7 @@ from extensions.auth_jwt.exceptions import (
     CSRFError,
 )
 from extensions.sqlalchemy import init_db, DBSessionMiddleware, SessionLocal
-from modules import authRouter, footballRouter, platformRouter, samplePlatformRouter
+from modules import authRouter, footballRouter, platformRouter, samplePlatformRouter, websocketRouter, webhookRouter
 from modules.user.models.user_model import UserModel
 from modules.admin.models.admin_model import AdminModel
 from project_helpers.error import Error
@@ -216,8 +217,14 @@ async def lifespan(app: FastAPI):
     from modules.platform_registry.service_registry import registry
     logging.info("FusionBoard API started - %d platform(s) registered.", len(registry.services))
 
+    # Start football change detector
+    from modules.football_tracking.change_detector import start_change_detector, stop_change_detector
+    change_detector_task = asyncio.create_task(start_change_detector(interval_seconds=300))
+
     yield
 
+    stop_change_detector()
+    change_detector_task.cancel()
     logging.info("FusionBoard API shutting down.")
 
 
@@ -277,6 +284,12 @@ common_responses = {
 }
 for router in (authRouter, footballRouter, platformRouter, samplePlatformRouter):
     api.include_router(router, responses=common_responses)
+
+# WebSocket router (no common_responses since WS doesn't use HTTP responses)
+api.include_router(websocketRouter)
+
+# Webhook router (uses shared secret auth, not JWT)
+api.include_router(webhookRouter)
 
 
 def main():

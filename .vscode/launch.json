@@ -52,6 +52,12 @@
             "justMyCode": false,
             "cwd": "${workspaceFolder}/src",
             "console": "internalConsole"
+        },
+        {
+            "name": "Run Containers (no debugger)",
+            "type": "node-terminal",
+            "request": "launch",
+            "command": "docker-compose -f deploy/docker-compose.yml up --no-deps -d --build"
         }
     ]
 }
