@@ -24,7 +24,7 @@ from extensions.auth_jwt.exceptions import (
     CSRFError,
 )
 from extensions.sqlalchemy import init_db, DBSessionMiddleware, SessionLocal
-from modules import authRouter, footballRouter, platformRouter, samplePlatformRouter, websocketRouter, webhookRouter
+from modules import authRouter, footballRouter, platformRouter, samplePlatformRouter, jobTrackerRouter, smartTasksRouter, dailyBriefRouter, websocketRouter, webhookRouter
 from modules.user.models.user_model import UserModel
 from modules.admin.models.admin_model import AdminModel
 from project_helpers.error import Error
@@ -214,6 +214,11 @@ async def lifespan(app: FastAPI):
     register_football_service()
     register_sample_service()
 
+    from modules.job_tracker.register import register_job_tracker_service
+    from modules.smart_tasks.register import register_smart_tasks_service
+    register_job_tracker_service()
+    register_smart_tasks_service()
+
     from modules.platform_registry.service_registry import registry
     logging.info("FusionBoard API started - %d platform(s) registered.", len(registry.services))
 
@@ -282,7 +287,7 @@ common_responses = {
     422: {"model": ErrorSchema},
     404: {"model": ErrorSchema},
 }
-for router in (authRouter, footballRouter, platformRouter, samplePlatformRouter):
+for router in (authRouter, footballRouter, platformRouter, samplePlatformRouter, jobTrackerRouter, smartTasksRouter, dailyBriefRouter):
     api.include_router(router, responses=common_responses)
 
 # WebSocket router (no common_responses since WS doesn't use HTTP responses)
